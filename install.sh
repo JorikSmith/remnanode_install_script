@@ -1,23 +1,30 @@
 #!/bin/bash
+
 # arguments
+
 SECRET_KEY=""
 NODE_PORT=2222
 APPLY_SYSCTL=false
+TG_PORTS=""
+NP_IPS=""
 
 while [ $# -gt 0 ]; do
-    case $1 in
-        --sk) SECRET_KEY=$2; shift 2 ;;
-        --p)  NODE_PORT=$2; shift 2 ;;
-        --s)  APPLY_SYSCTL=true; shift ;;
-        *) shift ;;
-    esac
+  case $1 in
+    --sk) SECRET_KEY=$2; shift 2 ;;
+    --p)  NODE_PORT=$2; shift 2 ;;
+    --s)  APPLY_SYSCTL=true; shift ;;
+    --tg) TG_PORTS=$2; shift 2 ;;
+    --np) NP_IPS=$2; shift 2 ;;
+    *)    shift ;;
+  esac
 done
 
 [ -z "$SECRET_KEY" ] && exit 1
 
 # sysctl
+
 if [ "$APPLY_SYSCTL" = true ]; then
-    cat <<EOF >> /etc/sysctl.conf
+  cat <<EOF >> /etc/sysctl.conf
 net.ipv6.conf.all.disable_ipv6 = 1
 net.ipv6.conf.default.disable_ipv6 = 1
 net.ipv6.conf.lo.disable_ipv6 = 1
@@ -39,17 +46,19 @@ net.core.netdev_max_backlog = 5000
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
 EOF
-
-    sysctl -p
+  sysctl -p
 fi
 
 # install docker
-sudo curl -fsSL https://get.docker.com | sh
+
+command -v docker &>/dev/null || curl -fsSL https://get.docker.com | sh
 
 # directory
+
 mkdir -p /opt/remnanode && cd /opt/remnanode
 
 # docker compose
+
 cat <<EOF > docker-compose.yml
 services:
   remnanode:
@@ -69,5 +78,32 @@ services:
       - SECRET_KEY=$SECRET_KEY
 EOF
 
+# ufw
+
+{ [ -n "$TG_PORTS" ] || [ -n "$NP_IPS" ]; } && { ufw allow OpenSSH; ufw --force enable; }
+
+# trafficguard
+
+if [ -n "$TG_PORTS" ]; then
+  curl -fsSL https://raw.githubusercontent.com/dotX12/traffic-guard/master/install.sh | sh
+  [ -z "$NP_IPS" ] && _tg_all="$TG_PORTS:$NODE_PORT" || _tg_all="$TG_PORTS"
+  IFS=':' read -ra _ports <<< "$_tg_all"
+  for _p in "${_ports[@]}"; do ufw allow "$_p/tcp"; done
+  traffic-guard full \
+    -u https://raw.githubusercontent.com/shadow-netlab/traffic-guard-lists/refs/heads/main/public/antiscanner.list \
+    -u https://raw.githubusercontent.com/shadow-netlab/traffic-guard-lists/refs/heads/main/public/government_networks.list \
+    -u https://raw.githubusercontent.com/shadow-netlab/traffic-guard-lists/refs/heads/main/public/skipa.list \
+    --enable-logging
+fi
+
+# nodeprotect
+
+if [ -n "$NP_IPS" ]; then
+  IFS=':' read -ra _ips <<< "$NP_IPS"
+  for _ip in "${_ips[@]}"; do ufw allow from "$_ip" to any port "$NODE_PORT" proto tcp; done
+  ufw deny "$NODE_PORT/tcp"
+fi
+
 # start
+
 docker compose up -d && docker compose logs -f -t
