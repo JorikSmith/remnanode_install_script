@@ -53,6 +53,10 @@ fi
 
 command -v docker &>/dev/null || curl -fsSL https://get.docker.com | sh
 
+# install ufw
+
+command -v ufw &>/dev/null || apt-get install -y ufw
+
 # directory
 
 mkdir -p /opt/remnanode && cd /opt/remnanode
