@@ -21,18 +21,41 @@ done
 
 [ -z "$SECRET_KEY" ] && exit 1
 
-# xanmod kernel
+REBOOT=false
 
-if [ "$APPLY_SYSCTL" = true ]; then
+# deps
+
+apt-get update
+apt-get install -y gpg
+
+# install docker
+
+command -v docker &>/dev/null || curl -fsSL https://get.docker.com | sh
+
+# install ufw
+
+command -v ufw &>/dev/null || apt-get install -y ufw
+
+# xanmod kernel (bbrv3)
+
+if [ "$APPLY_SYSCTL" = true ] && [ "$(uname -m)" = "x86_64" ] && ! systemd-detect-virt -c &>/dev/null; then
+  CODENAME=$(. /etc/os-release; echo "$VERSION_CODENAME")
   curl -fsSL https://dl.xanmod.org/archive.key | gpg --dearmor -o /usr/share/keyrings/xanmod-archive-keyring.gpg
-  echo "deb [signed-by=/usr/share/keyrings/xanmod-archive-keyring.gpg] http://deb.xanmod.org releases main" > /etc/apt/sources.list.d/xanmod-release.list
+  echo "deb [signed-by=/usr/share/keyrings/xanmod-archive-keyring.gpg] http://deb.xanmod.org $CODENAME main" > /etc/apt/sources.list.d/xanmod-release.list
   apt-get update
-  apt-get install -y linux-xanmod-x64v3
+  apt-get install -y linux-xanmod-x64v3 \
+    || apt-get install -y linux-xanmod-lts-x64v3 \
+    || apt-get install -y linux-xanmod-x64v2 \
+    || apt-get install -y linux-xanmod-lts-x64v2 \
+    || apt-get install -y linux-xanmod-x64v1 \
+    || apt-get install -y linux-xanmod-lts-x64v1
+  dpkg -l | grep -q linux-xanmod && REBOOT=true
 fi
 
 # sysctl
 
 if [ "$APPLY_SYSCTL" = true ]; then
+  modprobe nf_conntrack 2>/dev/null
   cat <<EOF >> /etc/sysctl.conf
 net.ipv6.conf.all.disable_ipv6 = 1
 net.ipv6.conf.default.disable_ipv6 = 1
@@ -66,14 +89,6 @@ EOF
   sysctl -p
 fi
 
-# install docker
-
-command -v docker &>/dev/null || curl -fsSL https://get.docker.com | sh
-
-# install ufw
-
-command -v ufw &>/dev/null || apt-get install -y ufw
-
 # directory
 
 mkdir -p /opt/remnanode && cd /opt/remnanode
@@ -106,7 +121,7 @@ EOF
 # trafficguard
 
 if [ -n "$TG_PORTS" ]; then
-  curl -fsSL https://raw.githubusercontent.com/dotX12/traffic-guard/master/install.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/dotX12/traffic-guard/master/install.sh | bash
   [ -z "$NP_IPS" ] && _tg_all="$TG_PORTS:$NODE_PORT" || _tg_all="$TG_PORTS"
   IFS=':' read -ra _ports <<< "$_tg_all"
   for _p in "${_ports[@]}"; do ufw allow "$_p/tcp"; done
@@ -131,4 +146,8 @@ docker compose up -d
 
 # reboot
 
-[ "$APPLY_SYSCTL" = true ] && reboot
+if [ "$REBOOT" = true ]; then
+  reboot
+else
+  docker compose logs -f -t
+fi
