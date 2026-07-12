@@ -121,7 +121,7 @@ EOF
 # trafficguard
 
 if [ -n "$TG_PORTS" ]; then
-  curl -fsSL https://raw.githubusercontent.com/dotX12/traffic-guard/master/install.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/dotX12/traffic-guard/master/install.sh | bash &>/dev/null
   [ -z "$NP_IPS" ] && _tg_all="$TG_PORTS:$NODE_PORT" || _tg_all="$TG_PORTS"
   IFS=':' read -ra _ports <<< "$_tg_all"
   for _p in "${_ports[@]}"; do ufw allow "$_p/tcp"; done
