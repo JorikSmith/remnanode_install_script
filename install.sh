@@ -21,6 +21,15 @@ done
 
 [ -z "$SECRET_KEY" ] && exit 1
 
+# xanmod kernel
+
+if [ "$APPLY_SYSCTL" = true ]; then
+  curl -fsSL https://dl.xanmod.org/archive.key | gpg --dearmor -o /usr/share/keyrings/xanmod-archive-keyring.gpg
+  echo "deb [signed-by=/usr/share/keyrings/xanmod-archive-keyring.gpg] http://deb.xanmod.org releases main" > /etc/apt/sources.list.d/xanmod-release.list
+  apt-get update
+  apt-get install -y linux-xanmod-x64v3
+fi
+
 # sysctl
 
 if [ "$APPLY_SYSCTL" = true ]; then
@@ -29,7 +38,7 @@ net.ipv6.conf.all.disable_ipv6 = 1
 net.ipv6.conf.default.disable_ipv6 = 1
 net.ipv6.conf.lo.disable_ipv6 = 1
 net.ipv4.tcp_syncookies = 1
-net.ipv4.tcp_max_syn_backlog = 8192
+net.ipv4.tcp_max_syn_backlog = 65535
 net.ipv4.tcp_fin_timeout = 20
 net.ipv4.tcp_fastopen = 3
 net.ipv4.tcp_tw_reuse = 1
@@ -37,14 +46,22 @@ net.ipv4.tcp_max_tw_buckets = 262144
 net.ipv4.tcp_keepalive_time = 600
 net.ipv4.tcp_keepalive_intvl = 60
 net.ipv4.tcp_keepalive_probes = 5
-net.ipv4.tcp_rmem = 4096 87380 16777216
-net.ipv4.tcp_wmem = 4096 65536 16777216
-net.core.rmem_max = 16777216
-net.core.wmem_max = 16777216
-net.core.somaxconn = 4096
-net.core.netdev_max_backlog = 5000
+net.ipv4.tcp_slow_start_after_idle = 0
+net.ipv4.tcp_notsent_lowat = 16384
+net.ipv4.tcp_ecn = 2
+net.ipv4.conf.all.rp_filter = 2
+net.ipv4.conf.default.rp_filter = 2
+net.ipv4.tcp_rmem = 4096 87380 33554432
+net.ipv4.tcp_wmem = 4096 65536 33554432
+net.core.rmem_max = 33554432
+net.core.wmem_max = 33554432
+net.core.somaxconn = 65535
+net.core.netdev_max_backlog = 65535
+net.core.netdev_budget = 600
+net.core.netdev_budget_usecs = 8000
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
+net.netfilter.nf_conntrack_max = 1048576
 EOF
   sysctl -p
 fi
@@ -84,7 +101,7 @@ EOF
 
 # ufw
 
-{ [ -n "$TG_PORTS" ] || [ -n "$NP_IPS" ]; } && { ufw allow OpenSSH; ufw --force enable; }
+{ [ -n "$TG_PORTS" ] || [ -n "$NP_IPS" ]; } && { ufw limit OpenSSH; ufw --force enable; }
 
 # trafficguard
 
@@ -110,4 +127,8 @@ fi
 
 # start
 
-docker compose up -d && docker compose logs -f -t
+docker compose up -d
+
+# reboot
+
+[ "$APPLY_SYSCTL" = true ] && reboot
