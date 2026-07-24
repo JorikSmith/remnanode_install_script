@@ -103,6 +103,11 @@ services:
     image: remnawave/node:latest
     network_mode: host
     restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
     cap_add:
       - NET_ADMIN
     ulimits:
